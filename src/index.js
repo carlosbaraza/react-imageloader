@@ -1,4 +1,6 @@
 import React from 'react';
+import throttle from 'lodash.throttle';
+import {findDOMNode} from 'react-dom';
 
 const {PropTypes} = React;
 const {span} = React.DOM;
@@ -21,25 +23,56 @@ export default class ImageLoader extends React.Component {
     onError: PropTypes.func,
     imgProps: PropTypes.object,
     triggered: PropTypes.bool,
+    lazyLoad: PropTypes.bool,
   };
 
   static defaultProps = {
     wrapper: span,
     triggered: true,
+    lazyLoad: false,
   };
 
   constructor(props) {
     super(props);
+    console.log(props);
     this.state = {
       status: this.getStatus(),
+      lazyLoad: props.lazyLoad,
     };
   }
 
   componentDidMount() {
+    if (this.state.lazyLoad) {
+      console.log('mounted with lazy load');
+      window.addEventListener('scroll', this.updateOnViewport, false);
+      window.addEventListener('resize', this.updateOnViewport, false);
+      this.updateOnViewport();
+    }
+
     if (this.state.status === Status.LOADING) {
       this.createLoader();
     }
   }
+
+  removeLazyLoadingListeners() {
+    console.log('removing listeners');
+    window.removeEventListener('scroll', this.updateOnViewport);
+    window.removeEventListener('resize', this.updateOnViewport);
+  }
+
+  updateOnViewport = throttle(() => {
+    if (this.state.status !== Status.PENDING) return;
+
+    const {
+      top,
+      height
+    } = findDOMNode(this).getBoundingClientRect();
+
+    if (top >= 0 && (top - height) <= window.innerHeight) {
+      // this.removeLazyLoadingListeners();
+      this.setState({status: Status.LOADING});
+    }
+  }, 300)
 
   componentWillReceiveProps(nextProps) {
     if (this.props.src !== nextProps.src) {
@@ -61,11 +94,14 @@ export default class ImageLoader extends React.Component {
 
   componentWillUnmount() {
     this.destroyLoader();
+    if (this.state.lazyLoad) {
+      this.removeLazyLoadingListeners();
+    }
   }
 
   getStatus(props = this.props) {
-    const {src, triggered} = props;
-    return src && triggered ? Status.LOADING : Status.PENDING;
+    const {src, triggered, lazyLoad} = props;
+    return src && triggered && !lazyLoad ? Status.LOADING : Status.PENDING;
   }
 
   getClassName() {
